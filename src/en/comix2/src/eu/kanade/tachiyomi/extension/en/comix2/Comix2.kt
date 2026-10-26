@@ -1,4 +1,4 @@
-﻿package eu.kanade.tachiyomi.extension.en.comix2
+package eu.kanade.tachiyomi.extension.en.comix2
 
 import android.app.Application
 import android.content.SharedPreferences
@@ -102,13 +102,11 @@ abstract class Comix2 :
     private val walkStarts = HashMap<String, MutableList<Long>>()
     private val walkSlots = Semaphore(MAX_RUNNING_WALKS)
 
-    private val tagIdCache = object : LinkedHashMap<String, List<String>>(
+    private val tagIdCache = LinkedHashMap<String, List<String>>(
         TAG_ID_CACHE_SIZE,
         0.75f,
         true,
-    ) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?) = size > TAG_ID_CACHE_SIZE
-    }
+    )
 
     override fun OkHttpClient.Builder.configureClient() = addInterceptor(Descrambler.interceptor)
         .addInterceptor { chain ->
@@ -356,7 +354,13 @@ abstract class Comix2 :
                 "window.$passPayloadName, window.$rejectName);"
         }
         val ids = payload.parseAs<TagSearchResponse>().result.map { it.id.toString() }
-        synchronized(tagIdCache) { tagIdCache[cacheKey] = ids }
+        synchronized(tagIdCache) {
+            tagIdCache[cacheKey] = ids
+            while (tagIdCache.size > TAG_ID_CACHE_SIZE) {
+                val eldestKey = tagIdCache.keys.firstOrNull() ?: break
+                tagIdCache.remove(eldestKey)
+            }
+        }
         return ids
     }
 
