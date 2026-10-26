@@ -26,4 +26,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: comix2-jar
-          path: src/en/comix2/build/outputs/apk/release/*.jar
+          path: src/en/comix2/build/outputs/apk/release/*.apk
