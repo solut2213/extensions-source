@@ -18,6 +18,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Apply Spotless Formatting
+        run: ./gradlew spotlessApply
       - name: Build with Gradle
         run: ./gradlew :src:en:comix2:assembleRelease
       - name: Upload built JAR
