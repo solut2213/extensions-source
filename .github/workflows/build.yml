@@ -22,8 +22,10 @@ jobs:
         run: ./gradlew spotlessApply
       - name: Build with Gradle
         run: ./gradlew :src:en:comix2:assembleRelease
-      - name: Upload built JAR
+      - name: Upload built artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: comix2-jar
-          path: src/en/comix2/build/outputs/apk/release/*.apk
+          name: comix2-artifacts
+          path: |
+            src/en/comix2/build/outputs/jar/release/*.jar
+            src/en/comix2/build/outputs/apk/release/*.apk
