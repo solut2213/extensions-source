@@ -89,25 +89,20 @@ private data class PagesResponse(
 // ── Extension ───────────────────────────────────────────────────────────────
 
 @Source
-class Comix3 :
+abstract class Comix3 :
     keiyoushi.source.KeiSource(),
     ConfigurableSource {
 
     private val preferences: SharedPreferences by getPreferencesLazy()
 
+    override val supportsLatest = true
+
     // The daemon host is configurable; the default points to localhost.
     // On Android the user must set it to the PC's LAN IP, e.g. http://192.168.1.10:8766
     private val daemonHost: String
-        get() = preferences.getString(PREF_DAEMON_HOST, PREF_DAEMON_HOST_DEFAULT)
+        get() = preferences.getString(PREF_DAEMON_HOST, baseUrl)
             ?.trimEnd('/')
-            ?: PREF_DAEMON_HOST_DEFAULT
-
-    override val name: String = "Comix3"
-    override val lang: String = "en"
-
-    // baseUrl is the daemon; no direct site traffic from the extension
-    override val baseUrl: String
-        get() = daemonHost
+            ?: baseUrl
 
     override val client: OkHttpClient = network.cloudflareClient
         .newBuilder()
