@@ -511,7 +511,7 @@ abstract class Comix3 :
                 window.__comixA1ChaptersStarted = true;
                 window.__comixHarvestOptions = {
                     timeoutMs: 60000,
-                    settleMs: 6000,
+                    settleMs: 2000,
                     maxRounds: 1000,
                     stopAtIds: ${knownIds.joinToString(",", "[", "]")}
                 };
@@ -1095,7 +1095,7 @@ abstract class Comix3 :
         private val RECENT_QUERIES_TTL_NANOS = 120.seconds.inWholeNanoseconds
         private const val SCRIPT_RETRY_INTERVAL_MS = 100L
         private const val MAX_CHAPTER_PAGES = 1000
-        private val chapterListPacer = RequestPacer(minGapMs = 2500, maxGapMs = 5000)
+        private val chapterListPacer = RequestPacer(minGapMs = 800, maxGapMs = 1500)
         private const val OFFICIAL_GROUP_ID = 10702
         private const val CHAPTER_DATA_VERSION = 1
         private const val TAG_ID_CACHE_SIZE = 50
