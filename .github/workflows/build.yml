@@ -1,0 +1,35 @@
+name: Build Comix3 Extension
+
+on:
+  push:
+    branches: [comix2, comix3, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Apply Spotless Formatting
+        run: ./gradlew spotlessApply
+
+      - name: Build Comix3 Extension
+        run: ./gradlew :src:en:comix3:assembleRelease
+
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: comix3-artifacts
+          path: |
+            src/en/comix3/build/outputs/jar/release/*.jar
+            src/en/comix3/build/outputs/apk/release/*.apk
