@@ -501,54 +501,64 @@ abstract class Comix3 :
     ): ChapterList {
         if (knownIds.isEmpty()) showChapterListHint()
         val mangaId = manga.url.removePrefix("/").substringBefore('-')
-        val payload = runInWebView(getMangaUrl(manga), { it.isChapterListRequest() }) { passPayloadName, _, touchName ->
-            """
-            (function () {
-                // Only on the requested title's page
-                const titlePath = ${JSONObject.quote("/title/$mangaId")};
-                if (location.pathname !== titlePath && !location.pathname.startsWith(titlePath + '-')) return;
-                if (window.__comixA1ChaptersStarted) return;
-                window.__comixA1ChaptersStarted = true;
-                window.__comixHarvestOptions = {
-                    timeoutMs: 60000,
-                    settleMs: 2000,
-                    maxRounds: 1000,
-                    stopAtIds: ${knownIds.joinToString(",", "[", "]")}
-                };
-                window.__comixNativeTap = function (x, y) { try { window.$touchName([x, y]); } catch (e) {} };
-                ${asset("harvest_chapters.js")}
-                const wrap = (result, queries) => ({
-                    chapters: (result.chapters || []).map(ch => ({
-                        id: ch.id,
-                        url: ch.url,
-                        number: ch.number,
-                        name: ch.name,
-                        votes: ch.votes,
-                        createdAtFormatted: dateOf(ch.text),
-                        group: ch.group,
-                        isOfficial: false
-                    })),
-                    complete: !!result.complete,
-                    error: result.error || null,
-                    queries: queries
-                });
-                const dateOf = text => {
-                    const m = /(\d+)\s*(s|m|h|d|w|mo|mos|y|yr|yrs|min|mins|sec|secs|hr|hrs|day|days|week|weeks|month|months|year|years)\s+ago/i.exec(text || '');
-                    return m ? m[1] + ' ' + m[2] + ' ago' : '';
-                };
-                window.__comixHarvestPromise.then(result => {
-                    let queries = null;
-                    try {
-                        const raw = document.querySelector('script#initial-data')?.textContent;
-                        if (raw) queries = JSON.parse(raw).queries || null;
-                    } catch (e) {}
-                    window.$passPayloadName(JSON.stringify(wrap(result, queries)));
-                }).catch(e => {
-                    window.$passPayloadName(JSON.stringify({ chapters: [], complete: false, error: String(e), queries: null }));
-                });
-            })();
-            """.trimIndent()
-        }
+        val payload = runInWebView(
+            url = getMangaUrl(manga),
+            isDataRequest = { it.isChapterListRequest() },
+            timeoutSeconds = 90L,
+            buildScript = { passPayloadName ->
+                """
+                (function () {
+                    // Only on the requested title's page
+                    const titlePath = ${JSONObject.quote("/title/$mangaId")};
+                    if (location.pathname !== titlePath && !location.pathname.startsWith(titlePath + '-')) return;
+                    if (window.__comixA1ChaptersStarted) return;
+                    window.__comixA1ChaptersStarted = true;
+                    window.__comixHarvestOptions = {
+                        timeoutMs: 60000,
+                        settleMs: 2000,
+                        maxRounds: 1000,
+                        stopAtIds: ${knownIds.joinToString(",", "[", "]")}
+                    };
+                    window.__comixNativeTap = function (x, y) {
+                        try {
+                            const el = document.elementFromPoint(x, y);
+                            if (el) el.click();
+                        } catch (e) {}
+                    };
+                    ${asset("harvest_chapters.js")}
+                    const wrap = (result, queries) => ({
+                        chapters: (result.chapters || []).map(ch => ({
+                            id: ch.id,
+                            url: ch.url,
+                            number: ch.number,
+                            name: ch.name,
+                            votes: ch.votes,
+                            createdAtFormatted: dateOf(ch.text),
+                            group: ch.group,
+                            isOfficial: false
+                        })),
+                        complete: !!result.complete,
+                        error: result.error || null,
+                        queries: queries
+                    });
+                    const dateOf = text => {
+                        const m = /(\d+)\s*(s|m|h|d|w|mo|mos|y|yr|yrs|min|mins|sec|secs|hr|hrs|day|days|week|weeks|month|months|year|years)\s+ago/i.exec(text || '');
+                        return m ? m[1] + ' ' + m[2] + ' ago' : '';
+                    };
+                    window.__comixHarvestPromise.then(result => {
+                        let queries = null;
+                        try {
+                            const raw = document.querySelector('script#initial-data')?.textContent;
+                            if (raw) queries = JSON.parse(raw).queries || null;
+                        } catch (e) {}
+                        window.$passPayloadName(JSON.stringify(wrap(result, queries)));
+                    }).catch(e => {
+                        window.$passPayloadName(JSON.stringify({ chapters: [], complete: false, error: String(e), queries: null }));
+                    });
+                })();
+                """.trimIndent()
+            },
+        )
         return payload.parseAs<ChapterList>()
     }
 
@@ -1091,7 +1101,7 @@ abstract class Comix3 :
 
         private const val DEFAULT_CONTENT_RATING = "suggestive"
         private const val WEBVIEW_TIMEOUT_SECONDS = 120L
-        private const val DATA_REQUEST_WAIT_SECONDS = 30L
+        private const val DATA_REQUEST_WAIT_SECONDS = 90L
         private val RECENT_QUERIES_TTL_NANOS = 120.seconds.inWholeNanoseconds
         private const val SCRIPT_RETRY_INTERVAL_MS = 100L
         private const val MAX_CHAPTER_PAGES = 1000
