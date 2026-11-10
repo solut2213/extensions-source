@@ -1,4 +1,4 @@
-﻿import io.github.keiyoushi.gradle.api.ContentWarning
+import io.github.keiyoushi.gradle.api.ContentWarning
 
 plugins {
     alias(kei.plugins.extension)
@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "Comix3"
-    versionCode = 4
+    versionCode = 5
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
