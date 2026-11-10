@@ -106,7 +106,6 @@ private data class PageListResponse(
 abstract class Comix3 : KeiSource(), ConfigurableSource {
 
     override val name: String = "Comix3"
-    override val lang: String = "en"
     override val supportsLatest: Boolean = true
 
     private val preferences: SharedPreferences by getPreferencesLazy()
@@ -114,9 +113,6 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
     private val daemonHost: String
         get() = preferences.getString(PREF_DAEMON_HOST, PREF_DAEMON_HOST_DEFAULT)
             ?.trim()?.removeSuffix("/") ?: PREF_DAEMON_HOST_DEFAULT
-
-    override val baseUrl: String
-        get() = daemonHost
 
     // ── Filters & Preferences Resolution ───────────────────────────────────
 
