@@ -19,6 +19,7 @@ import keiyoushi.source.KeiSource
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import java.net.URLEncoder
@@ -102,21 +103,14 @@ private data class PageListResponse(
 
 // ── Source Implementation ──────────────────────────────────────────────────
 
-@Source("comix3")
-class Comix3 : KeiSource(), ConfigurableSource {
-
-    override val name: String = "Comix3"
-    override val lang: String = "en"
-    override val supportsLatest: Boolean = true
+@Source
+abstract class Comix3 : KeiSource(), ConfigurableSource {
 
     private val preferences: SharedPreferences by getPreferencesLazy()
 
     private val daemonHost: String
         get() = preferences.getString(PREF_DAEMON_HOST, PREF_DAEMON_HOST_DEFAULT)
             ?.trim()?.removeSuffix("/") ?: PREF_DAEMON_HOST_DEFAULT
-
-    override val baseUrl: String
-        get() = daemonHost
 
     // ── Filters & Preferences Resolution ───────────────────────────────────
 
@@ -156,7 +150,7 @@ class Comix3 : KeiSource(), ConfigurableSource {
         blockedGenres = preferences.blockedGenres(),
     )
 
-    override fun getFilterList(): FilterList = sourceFilters().getFilterList()
+    override fun getFilterList(data: JsonElement?): FilterList = sourceFilters().getFilterList()
 
     // ── Catalog Browsing ───────────────────────────────────────────────────
 
@@ -172,7 +166,7 @@ class Comix3 : KeiSource(), ConfigurableSource {
 
         val url = "$daemonHost/v1/browse?${uriBuilder.build().query}"
         val req = GET(url, headers)
-        val res = client.newCall(req).await().parseAs<BrowseResponse>()
+        val res = client.newCall(req).execute().parseAs<BrowseResponse>()
 
         return MangasPage(
             mangas = res.items.map { item ->
@@ -198,7 +192,7 @@ class Comix3 : KeiSource(), ConfigurableSource {
 
         val url = "$daemonHost/v1/browse?${uriBuilder.build().query}"
         val req = GET(url, headers)
-        val res = client.newCall(req).await().parseAs<BrowseResponse>()
+        val res = client.newCall(req).execute().parseAs<BrowseResponse>()
 
         return MangasPage(
             mangas = res.items.map { item ->
@@ -237,7 +231,7 @@ class Comix3 : KeiSource(), ConfigurableSource {
         val url = "$daemonHost/v1/browse?$targetQuery"
 
         val req = GET(url, headers)
-        val res = client.newCall(req).await().parseAs<BrowseResponse>()
+        val res = client.newCall(req).execute().parseAs<BrowseResponse>()
 
         return MangasPage(
             mangas = res.items.map { item ->
@@ -266,7 +260,7 @@ class Comix3 : KeiSource(), ConfigurableSource {
             val encodedPath = URLEncoder.encode(manga.url, "UTF-8")
             val url = "$daemonHost/v1/manga?path=$encodedPath"
             val req = GET(url, headers)
-            val d = client.newCall(req).await().parseAs<MangaDetail>()
+            val d = client.newCall(req).execute().parseAs<MangaDetail>()
 
             updatedManga = SManga.create().apply {
                 this.url = manga.url
@@ -304,7 +298,7 @@ class Comix3 : KeiSource(), ConfigurableSource {
             val encodedPath = URLEncoder.encode(manga.url, "UTF-8")
             val url = "$daemonHost/v1/chapters?path=$encodedPath"
             val req = GET(url, headers)
-            val resp = client.newCall(req).await().parseAs<ChapterListResponse>()
+            val resp = client.newCall(req).execute().parseAs<ChapterListResponse>()
 
             val blacklist = preferences.scanlatorBlacklist()
             val deduplicate = preferences.deduplicateChapters()
@@ -329,7 +323,7 @@ class Comix3 : KeiSource(), ConfigurableSource {
                         "Chapter"
                     }
                     this.chapter_number = item.number.toFloatOrNull() ?: -1f
-                    this.scanlator = item.scanlator.ifEmpty { null }
+                    this.scanlator = item.scanlator.takeIf { it.isNotBlank() }
                     this.date_upload = 0L
                 }
             }
@@ -344,7 +338,7 @@ class Comix3 : KeiSource(), ConfigurableSource {
         val encodedPath = URLEncoder.encode(chapter.url, "UTF-8")
         val url = "$daemonHost/v1/pages?path=$encodedPath"
         val req = GET(url, headers)
-        val resp = client.newCall(req).await().parseAs<PageListResponse>()
+        val resp = client.newCall(req).execute().parseAs<PageListResponse>()
 
         return resp.pages.map { p ->
             Page(p.index, "", p.image_url)
