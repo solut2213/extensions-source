@@ -37,7 +37,6 @@ private const val PREF_BLOCKED_GENRES = "pref_blocked_genres"
 
 private const val PREF_DEDUPLICATE_CHAPTERS = "pref_deduplicate_chapters"
 private const val PREF_SCANLATOR_BLACKLIST = "pref_scanlator_blacklist"
-private const val PREF_ALTERNATIVE_NAMES = "pref_alternative_names_in_description"
 private const val PREF_SHOW_EXTRA_INFO = "pref_show_extra_info"
 
 // ── Response DTOs ──────────────────────────────────────────────────────────
@@ -74,18 +73,20 @@ private data class MangaDetail(
 
 @Serializable
 private data class ChapterItem(
-    val hid: String = "",
+    val id: Int = 0,
     val url: String = "",
-    val number: String = "",
-    val title: String = "",
-    val date: String = "",
+    val name: String = "",
+    val number: Double = 0.0,
     val scanlator: String = "",
-    val lang: String = "en",
+    val group_id: String? = null,
+    val date_ms: Long = 0L,
+    val votes: Int = 0,
 )
 
 @Serializable
 private data class ChapterListResponse(
     val chapters: List<ChapterItem> = emptyList(),
+    val complete: Boolean = false,
 )
 
 @Serializable
@@ -152,6 +153,13 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
 
     override fun getFilterList(data: JsonElement?): FilterList = sourceFilters().getFilterList()
 
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private fun Double.formatChapterNumber(): String {
+        if (this <= 0.0) return ""
+        return if (this % 1.0 == 0.0) this.toInt().toString() else this.toString()
+    }
+
     // ── Catalog Browsing ───────────────────────────────────────────────────
 
     override suspend fun getPopularManga(page: Int): MangasPage {
@@ -164,7 +172,8 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
             it.addToUri(uriBuilder)
         }
 
-        val url = "$daemonHost/v1/browse?${uriBuilder.build().query}"
+        val queryStr = uriBuilder.build().query ?: ""
+        val url = "$daemonHost/v1/browse?$queryStr"
         val req = GET(url, headers)
         val res = client.newCall(req).execute().parseAs<BrowseResponse>()
 
@@ -190,7 +199,8 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
             it.addToUri(uriBuilder)
         }
 
-        val url = "$daemonHost/v1/browse?${uriBuilder.build().query}"
+        val queryStr = uriBuilder.build().query ?: ""
+        val url = "$daemonHost/v1/browse?$queryStr"
         val req = GET(url, headers)
         val res = client.newCall(req).execute().parseAs<BrowseResponse>()
 
@@ -220,6 +230,17 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
                     it.addToUri(uriBuilder)
                 }
             }
+
+        // Wire text filters that don't implement UriFilter
+        filters.filterIsInstance<Filters.TagsFilter>().firstOrNull()?.let {
+            if (it.state.isNotBlank()) uriBuilder.addQueryParameter("tags", it.state)
+        }
+        filters.filterIsInstance<Filters.AuthorFilter>().firstOrNull()?.let {
+            if (it.state.isNotBlank()) uriBuilder.addQueryParameter("author", it.state)
+        }
+        filters.filterIsInstance<Filters.ArtistFilter>().firstOrNull()?.let {
+            if (it.state.isNotBlank()) uriBuilder.addQueryParameter("artist", it.state)
+        }
 
         val q = query.trim()
         if (q.isNotBlank()) {
@@ -304,8 +325,11 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
             val deduplicate = preferences.deduplicateChapters()
 
             var chaps = resp.chapters.filter { item ->
-                if (blacklist.isEmpty()) true
-                else item.scanlator.lowercase().trim() !in blacklist
+                if (blacklist.isEmpty()) {
+                    true
+                } else {
+                    item.scanlator.lowercase().trim() !in blacklist
+                }
             }
 
             if (deduplicate) {
@@ -313,18 +337,15 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
             }
 
             updatedChapters = chaps.map { item ->
+                val numStr = item.number.formatChapterNumber()
                 SChapter.create().apply {
                     this.url = item.url
-                    this.name = if (item.title.isNotBlank() && item.title != item.number) {
-                        if (item.number.isNotBlank()) "Ch. ${item.number} - ${item.title}" else item.title
-                    } else if (item.number.isNotBlank()) {
-                        "Ch. ${item.number}"
-                    } else {
-                        "Chapter"
+                    this.name = item.name.ifBlank {
+                        if (numStr.isNotEmpty()) "Ch. $numStr" else "Chapter"
                     }
-                    this.chapter_number = item.number.toFloatOrNull() ?: -1f
+                    this.chapter_number = item.number.toFloat()
                     this.scanlator = item.scanlator.takeIf { it.isNotBlank() }
-                    this.date_upload = 0L
+                    this.date_upload = item.date_ms
                 }
             }
         }
