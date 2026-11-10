@@ -82,6 +82,8 @@ private data class ChapterItem(
     val scanlator: String = "",
     val date_upload: Long = 0L,
     val date_ms: Long = 0L,
+    val votes: Int = 0,
+    val is_official: Boolean = false,
 )
 
 @Serializable
@@ -360,27 +362,42 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
             }
 
             if (deduplicate) {
-                chaps = chaps.distinctBy { if (it.number >= 0f) it.number.toString() else it.url }
+                val chapterMap = LinkedHashMap<Float, ChapterItem>()
+                for (ch in chaps) {
+                    val existing = chapterMap[ch.number]
+                    if (existing == null || ch.votes > existing.votes || ch.is_official) {
+                        chapterMap[ch.number] = ch
+                    }
+                }
+                chaps = chapterMap.values.toList()
             }
 
             updatedChapters = chaps.map { item ->
                 SChapter.create().apply {
-                    this.url = item.url
-                    val displayName = item.title.takeIf { it.isNotBlank() }
-                        ?: item.name.takeIf { it.isNotBlank() }
-                    this.name = if (displayName != null) {
-                        displayName
-                    } else if (item.number >= 0f) {
-                        val numStr = if (item.number % 1 == 0f) item.number.toInt().toString() else item.number.toString()
-                        "Ch. $numStr"
+                    this.url = item.url.removePrefix("/")
+                    val numStr = if (item.number >= 0f) {
+                        if (item.number % 1.0f == 0.0f) item.number.toInt().toString() else item.number.toString()
+                    } else null
+
+                    // Identical to original Comix Dto.kt: Chapter <number>: <subtitle> or Chapter <number>
+                    val subTitle = item.title.takeIf { it.isNotBlank() } ?: item.name.takeIf { it.isNotBlank() } ?: ""
+                    this.name = if (subTitle.startsWith("Chapter ", ignoreCase = true) || subTitle.startsWith("Ch. ", ignoreCase = true)) {
+                        subTitle
+                    } else if (numStr != null && subTitle.isNotEmpty()) {
+                        "Chapter $numStr: $subTitle"
+                    } else if (numStr != null) {
+                        "Chapter $numStr"
+                    } else if (subTitle.isNotEmpty()) {
+                        subTitle
                     } else {
                         "Chapter"
                     }
+
                     this.chapter_number = item.number
-                    this.scanlator = item.scanlator.takeIf { it.isNotBlank() }
+                    this.scanlator = if (item.scanlator.isNotBlank()) item.scanlator else if (item.is_official) "Official" else "Unknown"
                     this.date_upload = if (item.date_upload > 0L) item.date_upload else item.date_ms
                 }
-            }
+            }.sortedByDescending { it.chapter_number }
         }
 
         return SMangaUpdate(updatedManga, updatedChapters)
