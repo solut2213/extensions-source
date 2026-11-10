@@ -103,7 +103,7 @@ private data class PageListResponse(
 // ── Source Implementation ──────────────────────────────────────────────────
 
 @Source("comix3")
-class Comix3 : KeiSource(), ConfigurableSource {
+abstract class Comix3 : KeiSource(), ConfigurableSource {
 
     override val name: String = "Comix3"
     override val lang: String = "en"
