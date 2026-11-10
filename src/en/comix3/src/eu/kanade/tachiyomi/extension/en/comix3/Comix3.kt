@@ -20,6 +20,7 @@ import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import java.net.URLEncoder
@@ -76,17 +77,16 @@ private data class ChapterItem(
     val id: Int = 0,
     val url: String = "",
     val name: String = "",
-    val number: Double = 0.0,
+    val title: String = "",
+    val number: Float = -1f,
     val scanlator: String = "",
-    val group_id: String? = null,
+    val date_upload: Long = 0L,
     val date_ms: Long = 0L,
-    val votes: Int = 0,
 )
 
 @Serializable
 private data class ChapterListResponse(
     val chapters: List<ChapterItem> = emptyList(),
-    val complete: Boolean = false,
 )
 
 @Serializable
@@ -153,11 +153,30 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
 
     override fun getFilterList(data: JsonElement?): FilterList = sourceFilters().getFilterList()
 
-    // ── Helpers ────────────────────────────────────────────────────────────
+    // ── Deep Linking & Browser URLs ────────────────────────────────────────
 
-    private fun Double.formatChapterNumber(): String {
-        if (this <= 0.0) return ""
-        return if (this % 1.0 == 0.0) this.toInt().toString() else this.toString()
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        val host = url.host.removePrefix("www.")
+        if (host != "comix.to") return null
+        if (url.pathSegments.size < 2 || url.pathSegments[0] != "title") return null
+
+        val mangaSlug = url.pathSegments[1]
+        val manga = SManga.create().apply {
+            this.url = "/$mangaSlug"
+        }
+        return fetchMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false).manga.apply {
+            this.url = manga.url
+        }
+    }
+
+    override fun getMangaUrl(manga: SManga): String {
+        val path = manga.url.removePrefix("/")
+        return "https://comix.to/$path"
+    }
+
+    override fun getChapterUrl(chapter: SChapter): String {
+        val path = chapter.url.removePrefix("/")
+        return "https://comix.to/$path"
     }
 
     // ── Catalog Browsing ───────────────────────────────────────────────────
@@ -172,8 +191,8 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
             it.addToUri(uriBuilder)
         }
 
-        val queryStr = uriBuilder.build().query ?: ""
-        val url = "$daemonHost/v1/browse?$queryStr"
+        val targetQuery = uriBuilder.build().query
+        val url = if (!targetQuery.isNullOrBlank()) "$daemonHost/v1/browse?$targetQuery" else "$daemonHost/v1/browse"
         val req = GET(url, headers)
         val res = client.newCall(req).execute().parseAs<BrowseResponse>()
 
@@ -199,8 +218,8 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
             it.addToUri(uriBuilder)
         }
 
-        val queryStr = uriBuilder.build().query ?: ""
-        val url = "$daemonHost/v1/browse?$queryStr"
+        val targetQuery = uriBuilder.build().query
+        val url = if (!targetQuery.isNullOrBlank()) "$daemonHost/v1/browse?$targetQuery" else "$daemonHost/v1/browse"
         val req = GET(url, headers)
         val res = client.newCall(req).execute().parseAs<BrowseResponse>()
 
@@ -231,15 +250,26 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
                 }
             }
 
-        // Wire text filters that don't implement UriFilter
         filters.filterIsInstance<Filters.TagsFilter>().firstOrNull()?.let {
-            if (it.state.isNotBlank()) uriBuilder.addQueryParameter("tags", it.state)
+            if (it.state.isNotBlank()) {
+                it.state.split(",").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }.forEach { tag ->
+                    uriBuilder.addQueryParameter("genres_in[]", tag)
+                }
+            }
         }
         filters.filterIsInstance<Filters.AuthorFilter>().firstOrNull()?.let {
-            if (it.state.isNotBlank()) uriBuilder.addQueryParameter("author", it.state)
+            if (it.state.isNotBlank()) {
+                it.state.split(",").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }.forEach { author ->
+                    uriBuilder.addQueryParameter("authors[]", author)
+                }
+            }
         }
         filters.filterIsInstance<Filters.ArtistFilter>().firstOrNull()?.let {
-            if (it.state.isNotBlank()) uriBuilder.addQueryParameter("artist", it.state)
+            if (it.state.isNotBlank()) {
+                it.state.split(",").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }.forEach { artist ->
+                    uriBuilder.addQueryParameter("artists[]", artist)
+                }
+            }
         }
 
         val q = query.trim()
@@ -325,27 +355,30 @@ abstract class Comix3 : KeiSource(), ConfigurableSource {
             val deduplicate = preferences.deduplicateChapters()
 
             var chaps = resp.chapters.filter { item ->
-                if (blacklist.isEmpty()) {
-                    true
-                } else {
-                    item.scanlator.lowercase().trim() !in blacklist
-                }
+                if (blacklist.isEmpty()) true
+                else item.scanlator.lowercase().trim() !in blacklist
             }
 
             if (deduplicate) {
-                chaps = chaps.distinctBy { it.number }
+                chaps = chaps.distinctBy { if (it.number >= 0f) it.number.toString() else it.url }
             }
 
             updatedChapters = chaps.map { item ->
-                val numStr = item.number.formatChapterNumber()
                 SChapter.create().apply {
                     this.url = item.url
-                    this.name = item.name.ifBlank {
-                        if (numStr.isNotEmpty()) "Ch. $numStr" else "Chapter"
+                    val displayName = item.title.takeIf { it.isNotBlank() }
+                        ?: item.name.takeIf { it.isNotBlank() }
+                    this.name = if (displayName != null) {
+                        displayName
+                    } else if (item.number >= 0f) {
+                        val numStr = if (item.number % 1 == 0f) item.number.toInt().toString() else item.number.toString()
+                        "Ch. $numStr"
+                    } else {
+                        "Chapter"
                     }
-                    this.chapter_number = item.number.toFloat()
+                    this.chapter_number = item.number
                     this.scanlator = item.scanlator.takeIf { it.isNotBlank() }
-                    this.date_upload = item.date_ms
+                    this.date_upload = if (item.date_upload > 0L) item.date_upload else item.date_ms
                 }
             }
         }
